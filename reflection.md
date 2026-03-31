@@ -73,31 +73,26 @@ For conflict detection, the scheduler only flags tasks that share the exact same
 
 **a. What you tested**
 
-15 tests across four classes (`TestTask`, `TestPet`, `TestOwner`, `TestScheduler`):
+32 tests across 8 groups (`TestTask`, `TestPet`, `TestOwner`, `TestScheduler`, `TestSortByTime`, `TestRecurrence`, `TestConflictDetection`, `TestFilterTasks`):
 
-- `mark_complete()` flips `completed` from `False` to `True`
-- `reset()` restores `completed` to `False`
-- Adding a task to a `Pet` increases its task count by exactly 1
-- `get_tasks()` returns a copy (mutating the copy doesn't affect the pet)
-- `pending_tasks()` excludes completed tasks
-- `get_all_tasks()` aggregates tasks across all pets
-- Schedule total duration never exceeds `available_minutes`
-- High-priority tasks always appear before low-priority ones
-- Completed tasks never appear in the generated schedule
-- Zero-budget owner produces an empty schedule
-- `explain_plan([])` returns a helpful message rather than crashing
-- Multi-pet schedule draws from all pets
-- Preferred-category tasks beat non-preferred tasks of equal priority
+- `mark_complete` / `reset` flip `completed` correctly; default priority is `"medium"`
+- `add_task` increases count; `get_tasks` returns a defensive copy; `pending_tasks` excludes completed
+- `get_all_tasks` aggregates across every pet, not just the first
+- Schedule: total duration ≤ budget; high priority first; completed tasks excluded; zero budget → empty; preferred-category ordering; multi-pet support
+- Sorting: chronological HH:MM order; untimed tasks last; empty list; already-sorted list
+- Recurrence: daily advances `due_date` by 1 day and stays pending; weekly advances by 7 days; `"once"` stays `completed=True`; no `due_date` defaults to today
+- Conflict detection: different times → no warning; same time → flagged with that slot; untimed tasks → never flagged; cross-pet and per-pet scoping
+- Filtering: by pet name; by completion status; no-args returns all
 
-These tests matter because the scheduler's core promise is "high-priority tasks first, within budget" — any regression there would silently produce a wrong plan with no visible error.
+These tests matter because the scheduler's core promise — right tasks, right order, no conflicts — would silently break without them.
 
 **b. Confidence**
 
-High confidence for the happy path and the tested edge cases. Edge cases to tackle next:
-- Two tasks with identical title, priority, and category (sort stability)
-- A single task whose duration exactly equals `available_minutes`
+⭐⭐⭐⭐ (4/5) — High confidence in all tested paths. Edge cases to tackle next:
+- Duration-overlap conflicts (task A at 08:00 for 30 min, task B at 08:15 — not flagged today)
 - Tasks added after a schedule is generated (stale schedule detection)
-- Owner with no pets or pets with no tasks
+- Owner with no pets, or pet with no pending tasks
+- `sort_by_time` with malformed time strings (e.g. `"8:5"` instead of `"08:05"`)
 
 ---
 

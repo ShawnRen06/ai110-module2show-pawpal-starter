@@ -5,6 +5,7 @@ Run with:  python -m pytest
 """
 
 import pytest
+from datetime import date, timedelta
 from pawpal_system import Owner, Pet, Task, Scheduler, PRIORITY_ORDER
 
 
@@ -167,3 +168,179 @@ class TestScheduler:
         owner.add_pet(pet)
         schedule = Scheduler(owner).generate_schedule(pet=pet)
         assert schedule[0].task.category == "exercise"
+
+
+# ── Sorting tests ─────────────────────────────────────────────────────────────
+
+class TestSortByTime:
+    def test_tasks_returned_in_chronological_order(self):
+        """sort_by_time() must return tasks ordered earliest to latest HH:MM."""
+        tasks = [
+            Task("Dinner",    "feeding",   10, time="18:00"),
+            Task("Walk",      "exercise",  30, time="08:00"),
+            Task("Lunch med", "medical",    5, time="12:30"),
+        ]
+        result = Scheduler.sort_by_time(tasks)
+        times = [t.time for t in result]
+        assert times == ["08:00", "12:30", "18:00"]
+
+    def test_tasks_without_time_go_last(self):
+        """Tasks with no time set should appear after all timed tasks."""
+        tasks = [
+            Task("Flex task", "enrichment", 10, time=""),
+            Task("Walk",      "exercise",   30, time="08:00"),
+        ]
+        result = Scheduler.sort_by_time(tasks)
+        assert result[0].time == "08:00"
+        assert result[1].time == ""
+
+    def test_empty_list_returns_empty(self):
+        """sort_by_time on an empty list should return an empty list."""
+        assert Scheduler.sort_by_time([]) == []
+
+    def test_already_sorted_list_unchanged(self):
+        """sort_by_time on an already-sorted list should not change order."""
+        tasks = [
+            Task("A", "exercise", 10, time="07:00"),
+            Task("B", "feeding",  10, time="09:00"),
+            Task("C", "grooming", 10, time="17:00"),
+        ]
+        result = Scheduler.sort_by_time(tasks)
+        assert [t.title for t in result] == ["A", "B", "C"]
+
+
+# ── Recurrence tests ──────────────────────────────────────────────────────────
+
+class TestRecurrence:
+    def test_daily_task_advances_due_date_by_one_day(self):
+        """Completing a daily task should move due_date forward by 1 day."""
+        today = date.today()
+        task = Task("Walk", "exercise", 30, frequency="daily", due_date=today)
+        task.mark_complete()
+        assert task.due_date == today + timedelta(days=1)
+
+    def test_daily_task_stays_pending_after_complete(self):
+        """A daily task should remain pending (completed=False) after mark_complete."""
+        task = Task("Walk", "exercise", 30, frequency="daily", due_date=date.today())
+        task.mark_complete()
+        assert task.completed is False
+
+    def test_weekly_task_advances_due_date_by_seven_days(self):
+        """Completing a weekly task should move due_date forward by 7 days."""
+        today = date.today()
+        task = Task("Grooming", "grooming", 15, frequency="weekly", due_date=today)
+        task.mark_complete()
+        assert task.due_date == today + timedelta(weeks=1)
+
+    def test_once_task_stays_complete(self):
+        """A 'once' task should remain completed=True after mark_complete."""
+        task = Task("Vet visit", "medical", 60, frequency="once")
+        task.mark_complete()
+        assert task.completed is True
+
+    def test_recurring_task_without_due_date_uses_today(self):
+        """A recurring task with no due_date set should default to today when completed."""
+        task = Task("Walk", "exercise", 30, frequency="daily")
+        assert task.due_date is None
+        task.mark_complete()
+        assert task.due_date == date.today() + timedelta(days=1)
+
+
+# ── Conflict detection tests ──────────────────────────────────────────────────
+
+class TestConflictDetection:
+    def test_no_conflicts_when_times_differ(self):
+        """Tasks at different times should not be flagged."""
+        owner = Owner(name="Sam", available_minutes=60)
+        pet = Pet(name="Rex", species="dog")
+        pet.add_task(Task("Walk", "exercise", 30, time="08:00"))
+        pet.add_task(Task("Feed", "feeding",  10, time="09:00"))
+        owner.add_pet(pet)
+        assert Scheduler(owner).check_conflicts() == []
+
+    def test_two_tasks_same_time_flagged(self):
+        """Two tasks at the same HH:MM should produce one conflict warning."""
+        owner = Owner(name="Sam", available_minutes=60)
+        pet = Pet(name="Rex", species="dog")
+        pet.add_task(Task("Walk", "exercise", 30, time="08:00"))
+        pet.add_task(Task("Feed", "feeding",  10, time="08:00"))
+        owner.add_pet(pet)
+        conflicts = Scheduler(owner).check_conflicts()
+        assert len(conflicts) == 1
+        assert "08:00" in conflicts[0]
+
+    def test_tasks_without_time_never_conflict(self):
+        """Tasks with no time set should never be flagged as conflicts."""
+        owner = Owner(name="Sam", available_minutes=60)
+        pet = Pet(name="Rex", species="dog")
+        pet.add_task(Task("Walk", "exercise", 30, time=""))
+        pet.add_task(Task("Feed", "feeding",  10, time=""))
+        owner.add_pet(pet)
+        assert Scheduler(owner).check_conflicts() == []
+
+    def test_cross_pet_conflict_detected(self):
+        """Tasks for different pets at the same time should also be flagged."""
+        owner = Owner(name="Sam", available_minutes=60)
+        p1 = Pet(name="Rex",     species="dog")
+        p2 = Pet(name="Whiskers", species="cat")
+        p1.add_task(Task("Walk",      "exercise", 30, time="08:00"))
+        p2.add_task(Task("Eye drops", "medical",   5, time="08:00"))
+        owner.add_pet(p1)
+        owner.add_pet(p2)
+        conflicts = Scheduler(owner).check_conflicts()
+        assert len(conflicts) == 1
+        assert "Rex" in conflicts[0] and "Whiskers" in conflicts[0]
+
+    def test_per_pet_conflict_check_ignores_other_pets(self):
+        """check_conflicts(pet=...) should only look at that pet's tasks."""
+        owner = Owner(name="Sam", available_minutes=60)
+        p1 = Pet(name="Rex",     species="dog")
+        p2 = Pet(name="Whiskers", species="cat")
+        p1.add_task(Task("Walk",      "exercise", 30, time="08:00"))
+        p2.add_task(Task("Eye drops", "medical",   5, time="08:00"))
+        owner.add_pet(p1)
+        owner.add_pet(p2)
+        # Each pet has only one task at 08:00 — no conflict within a single pet
+        assert Scheduler(owner).check_conflicts(pet=p1) == []
+        assert Scheduler(owner).check_conflicts(pet=p2) == []
+
+
+# ── Filter tests ──────────────────────────────────────────────────────────────
+
+class TestFilterTasks:
+    def test_filter_by_pet_name(self):
+        """filter_tasks(pet_name=...) should return only that pet's tasks."""
+        owner = Owner(name="Sam", available_minutes=60)
+        p1 = Pet(name="Rex",     species="dog")
+        p2 = Pet(name="Whiskers", species="cat")
+        p1.add_task(Task("Walk", "exercise", 30))
+        p2.add_task(Task("Feed", "feeding",  10))
+        owner.add_pet(p1)
+        owner.add_pet(p2)
+        result = Scheduler(owner).filter_tasks(pet_name="Rex")
+        assert all(p.name == "Rex" for p, _ in result)
+        assert len(result) == 1
+
+    def test_filter_by_completed_false(self):
+        """filter_tasks(completed=False) should exclude completed tasks."""
+        owner = Owner(name="Sam", available_minutes=60)
+        pet = Pet(name="Rex", species="dog")
+        t1 = Task("Walk", "exercise", 30)
+        t2 = Task("Feed", "feeding",  10)
+        t1.mark_complete()
+        pet.add_task(t1)
+        pet.add_task(t2)
+        owner.add_pet(pet)
+        result = Scheduler(owner).filter_tasks(completed=False)
+        titles = [t.title for _, t in result]
+        assert "Walk" not in titles
+        assert "Feed" in titles
+
+    def test_filter_no_args_returns_all(self):
+        """filter_tasks() with no arguments should return every task."""
+        owner = Owner(name="Sam", available_minutes=60)
+        pet = Pet(name="Rex", species="dog")
+        pet.add_task(Task("Walk", "exercise", 30))
+        pet.add_task(Task("Feed", "feeding",  10))
+        owner.add_pet(pet)
+        assert len(Scheduler(owner).filter_tasks()) == 2

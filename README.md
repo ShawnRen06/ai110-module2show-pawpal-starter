@@ -69,3 +69,30 @@ pending = scheduler.filter_tasks(pet_name="Mochi", completed=False)
 ```python
 warnings = scheduler.check_conflicts()  # e.g. ["Conflict at 08:00 — Mochi: Walk, Luna: Eye drops"]
 ```
+
+## Testing PawPal+
+
+### Run the test suite
+
+```bash
+python -m pytest
+```
+
+### What the tests cover
+
+| Class | Tests | Key behaviors verified |
+|---|---|---|
+| `Task` | 3 | `mark_complete` flips status; `reset` restores it; default priority is medium |
+| `Pet` | 3 | `add_task` increases count; `get_tasks` returns a copy; `pending_tasks` excludes completed |
+| `Owner` | 2 | `add_pet` increases count; `get_all_tasks` aggregates across all pets |
+| `Scheduler` (schedule) | 7 | Budget not exceeded; high priority first; completed tasks excluded; zero budget → empty; empty plan message; multi-pet; preferred category ordering |
+| `Scheduler` (sort) | 4 | Chronological order; untimed tasks last; empty list; already-sorted list |
+| `Scheduler` (recurrence) | 5 | Daily advances by 1 day and stays pending; weekly advances by 7 days; once stays complete; no due_date defaults to today |
+| `Scheduler` (conflicts) | 5 | Different times → no conflict; same time → flagged; untimed tasks → no conflict; cross-pet conflict; per-pet check ignores other pets |
+| `Scheduler` (filter) | 3 | Filter by pet name; filter by pending status; no args returns all |
+
+**Total: 32 tests — all passing**
+
+### Confidence level
+
+⭐⭐⭐⭐ (4/5) — High confidence in the happy path and all tested edge cases. The main gap is duration-overlap conflict detection (two tasks whose time windows overlap but don't share the exact same start time).
