@@ -5,10 +5,24 @@ from pawpal_system import Owner, Pet, Task, Scheduler
 st.set_page_config(page_title="PawPal+", page_icon="🐾", layout="wide")
 
 # ---------------------------------------------------------------------------
-# Session-state initialisation
+# Session-state initialisation — pre-load demo data on first run
 # ---------------------------------------------------------------------------
 if "owner" not in st.session_state:
-    st.session_state.owner: Owner | None = None
+    from datetime import date
+    _jordan = Owner(name="Jordan", available_minutes=90, preferences=["exercise", "feeding"])
+    _mochi  = Pet(name="Mochi", species="dog", age=3)
+    _luna   = Pet(name="Luna",  species="cat", age=5, special_needs="daily eye drops")
+    _mochi.add_task(Task("Morning walk",    "exercise",   30, "high",   time="08:00", frequency="daily",  due_date=date.today()))
+    _mochi.add_task(Task("Breakfast",       "feeding",    10, "high",   time="08:30", frequency="daily",  due_date=date.today()))
+    _mochi.add_task(Task("Enrichment game", "enrichment", 20, "medium", time="10:00", frequency="once"))
+    _mochi.add_task(Task("Brush coat",      "grooming",   15, "low",    time="17:00", frequency="weekly", due_date=date.today()))
+    _luna.add_task(Task("Eye drops",  "medical",    5,  "high",   time="08:00", frequency="daily",  due_date=date.today()))
+    _luna.add_task(Task("Wet food",   "feeding",    5,  "high",   time="08:30", frequency="daily",  due_date=date.today()))
+    _luna.add_task(Task("Laser play", "enrichment", 10, "medium", time="10:00", frequency="once"))
+    _luna.add_task(Task("Nail trim",  "grooming",   10, "low",    time="17:00", frequency="weekly", due_date=date.today()))
+    _jordan.add_pet(_mochi)
+    _jordan.add_pet(_luna)
+    st.session_state.owner = _jordan
 
 # ---------------------------------------------------------------------------
 # Sidebar — stats + architecture
