@@ -59,13 +59,20 @@ For conflict detection, the scheduler only flags tasks that share the exact same
 
 **a. How you used AI**
 
-- How did you use AI tools during this project (for example: design brainstorming, debugging, refactoring)?
-- What kinds of prompts or questions were most helpful?
+AI was used at every phase, but for different purposes:
+
+- **Phase 1 (Design):** Used AI to generate a first-draft Mermaid UML given a plain-English description of the four classes. The diagram came back immediately with reasonable relationships, which I then refined — for example, moving tasks onto `Pet` rather than `Owner`, and adding `ScheduledItem` as its own class.
+- **Phase 2 (Implementation):** Used AI to scaffold method bodies once the class structure was decided. The most useful prompt pattern was "given this method signature and these rules, implement the body" — short, constrained, and verifiable.
+- **Phase 4 (Algorithms):** Asked AI to suggest a lightweight conflict-detection strategy. It proposed grouping tasks by time with `defaultdict`, which was exactly the right tool. It also showed how to use a lambda key with `sorted()` for HH:MM string comparison.
+- **Phase 5 (Testing):** Used AI to generate test stubs from method signatures. The prompt "write pytest tests for `check_conflicts` covering: no conflict, exact-time match, untimed tasks, cross-pet" produced test skeletons that only needed minor adjustment to match the actual return types.
+
+The most effective prompt pattern throughout: **provide the method signature + the contract it must satisfy**, then ask for an implementation. Vague "write me a scheduler" prompts produced over-engineered code that needed heavy editing.
 
 **b. Judgment and verification**
 
-- Describe one moment where you did not accept an AI suggestion as-is.
-- How did you evaluate or verify what the AI suggested?
+When generating conflict detection, AI initially suggested comparing tasks using overlapping time *ranges* (start + duration), which would require tasks to have both a start time and an end time. That was more complex than needed — the current design uses a simple exact-match on `HH:MM` strings, which is sufficient for this scenario and much easier to test.
+
+I rejected the range-based version and kept the simpler string-grouping approach. To verify the decision was sound, I wrote five explicit test cases for `check_conflicts` and confirmed they all passed. The tradeoff (exact-match only, no duration overlap) is documented in `reflection.md` section 2b so a future developer knows the limitation is intentional, not an oversight.
 
 ---
 
@@ -100,12 +107,16 @@ These tests matter because the scheduler's core promise — right tasks, right o
 
 **a. What went well**
 
-- What part of this project are you most satisfied with?
+The "CLI-first" workflow was the best decision of the project. Building and verifying all logic in `pawpal_system.py` and `main.py` before touching Streamlit meant the UI integration (Phase 3) took under 30 minutes — the backend was already proven. The 32-test suite also gave real confidence: every time a new feature was added in Phase 4, running `pytest` immediately caught any regressions.
+
+The `ScheduledItem` dataclass was also a good early call. It kept the scheduler's output typed and self-documenting, which made it trivial to render as a table in the Streamlit UI without any extra parsing.
 
 **b. What you would improve**
 
-- If you had another iteration, what would you improve or redesign?
+The conflict detection only catches tasks that share the exact same `HH:MM` string. A duration-aware check — flagging any two tasks whose time windows overlap — would be significantly more useful in practice. Implementing it requires tracking `(start, start + duration)` intervals and checking for intersection, which is a well-known interval overlap problem.
+
+I would also add a "mark task complete" button directly in the Streamlit schedule view, so users can check off tasks as they do them throughout the day without having to reload or re-enter anything.
 
 **c. Key takeaway**
 
-- What is one important thing you learned about designing systems or working with AI on this project?
+The most important lesson: **AI accelerates the translation of a clear spec into code, but it cannot replace the spec itself.** Every time a prompt was vague ("build a scheduler"), the output was over-engineered and hard to adapt. Every time a prompt was precise ("given this method signature and these three rules, implement the body and write two edge-case tests"), the output was immediately usable. The human's job is to hold the design intent clearly enough to write those precise prompts — and to know when to reject output that technically works but adds unnecessary complexity.

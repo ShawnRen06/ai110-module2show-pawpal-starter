@@ -42,6 +42,25 @@ pip install -r requirements.txt
 6. Connect your logic to the Streamlit UI in `app.py`.
 7. Refine UML so it matches what you actually built.
 
+## Features
+
+- **Multi-pet support** — register multiple pets under one owner; schedule all pets at once or focus on a single one
+- **Priority-based scheduling** — high-priority tasks (medication, feeding) are always placed before lower-priority ones; owner category preferences break ties within the same priority
+- **Time budget enforcement** — tasks are scheduled greedily within the owner's daily `available_minutes`; tasks that don't fit are silently deferred
+- **Sorting by time** — any task can carry a preferred `HH:MM` start time; `sort_by_time()` orders tasks chronologically using a lambda key
+- **Conflict detection** — `check_conflicts()` flags any two tasks scheduled at the same `HH:MM` slot and surfaces warnings in the UI with `st.warning`
+- **Recurring tasks** — tasks can be `once`, `daily`, or `weekly`; completing a recurring task automatically advances its `due_date` so it stays pending for the next occurrence
+- **Filtering** — filter the task list by pet name and/or completion status; results are sorted chronologically by preferred time
+- **Plain-English explanations** — every scheduled item carries a `reason` string explaining why it was chosen and placed where it was
+
+## 📸 Demo
+
+Run the app locally:
+
+```bash
+streamlit run app.py
+```
+
 ## Smarter Scheduling
 
 PawPal+ goes beyond a basic task list with four algorithmic features:
