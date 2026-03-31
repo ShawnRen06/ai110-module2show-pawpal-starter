@@ -37,13 +37,19 @@ I also added `ScheduledItem` as a separate dataclass rather than returning raw t
 
 **a. Constraints and priorities**
 
-- What constraints does your scheduler consider (for example: time, priority, preferences)?
-- How did you decide which constraints mattered most?
+The scheduler considers three constraints, applied in this order:
+
+1. **Task priority** (`high → medium → low`) — a pet's health and safety tasks (medication, feeding) must never be bumped by lower-stakes activities.
+2. **Owner preferences** (a list of category names) — within the same priority tier, tasks whose category matches the owner's stated preferences are scheduled first. This lets owners signal "I care most about exercise" without overriding medical tasks.
+3. **Daily time budget** (`available_minutes`) — tasks are added greedily until the budget is exhausted; any remaining tasks are silently deferred.
+
+Time budget matters most _within_ a priority tier. A high-priority 5-minute task will always beat a low-priority 60-minute task, but if the budget runs out entirely, even high-priority tasks are skipped (rare in practice; a warning message covers this case).
 
 **b. Tradeoffs**
 
-- Describe one tradeoff your scheduler makes.
-- Why is that tradeoff reasonable for this scenario?
+The greedy "fill in priority order" approach is simple and predictable, but it can fail to find a feasible packing when several medium-priority tasks collectively fit but individually don't leave room for a later high-priority one. A proper bin-packing or backtracking solver would fix this.
+
+That tradeoff is reasonable here because the daily time budgets are loose (the scenario targets ~1–2 hours), and task durations are short (5–30 min). An exact solver would add complexity with negligible real-world benefit for a typical pet owner.
 
 ---
 
@@ -65,13 +71,31 @@ I also added `ScheduledItem` as a separate dataclass rather than returning raw t
 
 **a. What you tested**
 
-- What behaviors did you test?
-- Why were these tests important?
+15 tests across four classes (`TestTask`, `TestPet`, `TestOwner`, `TestScheduler`):
+
+- `mark_complete()` flips `completed` from `False` to `True`
+- `reset()` restores `completed` to `False`
+- Adding a task to a `Pet` increases its task count by exactly 1
+- `get_tasks()` returns a copy (mutating the copy doesn't affect the pet)
+- `pending_tasks()` excludes completed tasks
+- `get_all_tasks()` aggregates tasks across all pets
+- Schedule total duration never exceeds `available_minutes`
+- High-priority tasks always appear before low-priority ones
+- Completed tasks never appear in the generated schedule
+- Zero-budget owner produces an empty schedule
+- `explain_plan([])` returns a helpful message rather than crashing
+- Multi-pet schedule draws from all pets
+- Preferred-category tasks beat non-preferred tasks of equal priority
+
+These tests matter because the scheduler's core promise is "high-priority tasks first, within budget" — any regression there would silently produce a wrong plan with no visible error.
 
 **b. Confidence**
 
-- How confident are you that your scheduler works correctly?
-- What edge cases would you test next if you had more time?
+High confidence for the happy path and the tested edge cases. Edge cases to tackle next:
+- Two tasks with identical title, priority, and category (sort stability)
+- A single task whose duration exactly equals `available_minutes`
+- Tasks added after a schedule is generated (stale schedule detection)
+- Owner with no pets or pets with no tasks
 
 ---
 
