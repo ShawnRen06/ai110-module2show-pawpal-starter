@@ -103,9 +103,12 @@ with st.form("task_form"):
             "Category",
             ["exercise", "feeding", "medical", "grooming", "enrichment", "other"],
         )
+        task_time = st.text_input("Preferred time (HH:MM, optional)", value="",
+                                  help="e.g. 08:00 — used for sorting and conflict detection")
     with col2:
         duration = st.number_input("Duration (min)", min_value=1, max_value=240, value=20)
         priority = st.selectbox("Priority", ["low", "medium", "high"], index=2)
+        frequency = st.selectbox("Frequency", ["once", "daily", "weekly"])
     notes = st.text_input("Notes (optional)", value="")
     add_task = st.form_submit_button("Add task")
 
@@ -117,6 +120,8 @@ if add_task:
             duration_minutes=int(duration),
             priority=priority,
             notes=notes,
+            time=task_time.strip(),
+            frequency=frequency,
         )
     )
     st.success(f"Added **{task_title}** to {selected_pet.name}.")
@@ -130,13 +135,25 @@ if all_pairs:
             "Pet": p.name,
             "Task": t.title,
             "Category": t.category,
+            "Time": t.time or "—",
             "Duration (min)": t.duration_minutes,
             "Priority": t.priority,
+            "Frequency": t.frequency,
             "Done": "✓" if t.completed else "○",
         }
         for p, t in all_pairs
     ]
     st.table(rows)
+
+    # Conflict detection — always visible when tasks exist
+    scheduler_check = Scheduler(owner)
+    conflicts = scheduler_check.check_conflicts()
+    if conflicts:
+        st.subheader("⚠️ Schedule Conflicts Detected")
+        for warning in conflicts:
+            st.warning(warning)
+    else:
+        st.success("No time conflicts detected.")
 else:
     st.info("No tasks yet. Add one above.")
 
@@ -146,9 +163,13 @@ else:
 st.divider()
 st.header("4. Generate Schedule")
 
-schedule_scope = st.radio(
-    "Schedule for", ["All pets", *pet_names], horizontal=True
-)
+col_scope, col_filter = st.columns(2)
+with col_scope:
+    schedule_scope = st.radio(
+        "Schedule for", ["All pets", *pet_names], horizontal=True
+    )
+with col_filter:
+    show_pending_only = st.checkbox("Pending tasks only", value=True)
 
 if st.button("Generate schedule", type="primary"):
     scheduler = Scheduler(owner)
@@ -173,6 +194,7 @@ if st.button("Generate schedule", type="primary"):
                 "Pet": item.pet.name,
                 "Task": item.task.title,
                 "Priority": item.task.priority,
+                "Freq": item.task.frequency,
                 "Duration (min)": item.task.duration_minutes,
                 "Reason": item.reason,
             }
@@ -187,3 +209,47 @@ if st.button("Generate schedule", type="primary"):
             f"Buffer remaining: **{remaining} min** | "
             f"Budget: {owner.available_minutes} min"
         )
+
+# ---------------------------------------------------------------------------
+# Section 5 — Filter & sort view
+# ---------------------------------------------------------------------------
+st.divider()
+st.header("5. Filter & Sort Tasks")
+
+col_pet, col_status = st.columns(2)
+with col_pet:
+    filter_pet = st.selectbox("Filter by pet", ["All pets", *pet_names], key="filter_pet")
+with col_status:
+    filter_status = st.selectbox("Filter by status", ["All", "Pending", "Completed"], key="filter_status")
+
+if st.button("Apply filter"):
+    scheduler_f = Scheduler(owner)
+    pet_filter = None if filter_pet == "All pets" else filter_pet
+    completed_filter = None
+    if filter_status == "Pending":
+        completed_filter = False
+    elif filter_status == "Completed":
+        completed_filter = True
+
+    filtered = scheduler_f.filter_tasks(pet_name=pet_filter, completed=completed_filter)
+    if not filtered:
+        st.info("No tasks match the selected filters.")
+    else:
+        # Sort results by preferred time
+        sorted_tasks = Scheduler.sort_by_time([t for _, t in filtered])
+        pet_lookup = {t: p for p, t in filtered}
+        st.write(f"**{len(filtered)} task(s) found — sorted by time:**")
+        rows = [
+            {
+                "Time": t.time or "—",
+                "Pet": pet_lookup[t].name,
+                "Task": t.title,
+                "Category": t.category,
+                "Priority": t.priority,
+                "Duration (min)": t.duration_minutes,
+                "Frequency": t.frequency,
+                "Done": "✓" if t.completed else "○",
+            }
+            for t in sorted_tasks
+        ]
+        st.table(rows)

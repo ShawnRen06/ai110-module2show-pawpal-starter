@@ -11,6 +11,9 @@ classDiagram
         +int duration_minutes
         +str priority
         +str notes
+        +str time
+        +str frequency
+        +date|None due_date
         +bool completed
         +mark_complete() None
         +reset() None
@@ -47,6 +50,9 @@ classDiagram
     class Scheduler {
         +Owner owner
         +generate_schedule(pet: Pet | None) list[ScheduledItem]
+        +sort_by_time(tasks: list[Task]) list[Task]
+        +filter_tasks(pet_name, completed) list[tuple[Pet, Task]]
+        +check_conflicts(pet: Pet | None) list[str]
         +explain_plan(schedule: list[ScheduledItem]) str
     }
 
@@ -60,7 +66,9 @@ classDiagram
 
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass, field
+from datetime import date, timedelta
 
 
 # Priority rank used for sorting (lower number = higher priority)
@@ -76,21 +84,31 @@ DAY_START_MINUTE: int = 8 * 60
 
 @dataclass
 class Task:
-    """A single pet care activity with duration, priority, and completion state."""
+    """A single pet care activity with duration, priority, recurrence, and completion state."""
 
     title: str
-    category: str           # "exercise" | "feeding" | "medical" | "grooming" | "enrichment"
+    category: str               # "exercise" | "feeding" | "medical" | "grooming" | "enrichment"
     duration_minutes: int
-    priority: str = "medium"   # "low" | "medium" | "high"
+    priority: str = "medium"    # "low" | "medium" | "high"
     notes: str = ""
+    time: str = ""              # preferred wall-clock start in "HH:MM" format (empty = flexible)
+    frequency: str = "once"     # "once" | "daily" | "weekly"
+    due_date: date | None = None
     completed: bool = False
 
     def mark_complete(self) -> None:
-        """Mark this task as done for the day."""
-        self.completed = True
+        """Mark task done; recurring tasks auto-advance their due_date instead of staying complete."""
+        if self.frequency == "daily":
+            self.due_date = (self.due_date or date.today()) + timedelta(days=1)
+            self.completed = False          # immediately ready for tomorrow
+        elif self.frequency == "weekly":
+            self.due_date = (self.due_date or date.today()) + timedelta(weeks=1)
+            self.completed = False
+        else:
+            self.completed = True           # "once" tasks stay complete
 
     def reset(self) -> None:
-        """Reset completion status (e.g., for a new day)."""
+        """Reset completion status (e.g., for a new day or undo)."""
         self.completed = False
 
 
@@ -179,6 +197,12 @@ class Scheduler:
     2. Sort by: priority rank → owner preference → title (for stability).
     3. Greedily fill the owner's time budget back-to-back from 08:00.
     4. Tasks that would exceed the budget are skipped (deferred).
+
+    Additional algorithms
+    ---------------------
+    - sort_by_time(): sort a task list by preferred HH:MM start time.
+    - filter_tasks(): filter (pet, task) pairs by pet name or completion status.
+    - check_conflicts(): detect tasks whose HH:MM times overlap or collide.
     """
 
     def __init__(self, owner: Owner) -> None:
@@ -186,26 +210,92 @@ class Scheduler:
         self.owner = owner
 
     # ------------------------------------------------------------------
-    # Public API
+    # Sorting
     # ------------------------------------------------------------------
 
-    def generate_schedule(self, pet: Pet | None = None) -> list[ScheduledItem]:
+    @staticmethod
+    def sort_by_time(tasks: list[Task]) -> list[Task]:
+        """Return tasks sorted by their preferred HH:MM start time.
+
+        Tasks with no time set are placed at the end (treated as '99:99').
+        Uses a lambda key so that lexicographic comparison of zero-padded
+        strings gives correct chronological order.
         """
-        Build a daily schedule.
+        return sorted(tasks, key=lambda t: t.time if t.time else "99:99")
+
+    # ------------------------------------------------------------------
+    # Filtering
+    # ------------------------------------------------------------------
+
+    def filter_tasks(
+        self,
+        pet_name: str | None = None,
+        completed: bool | None = None,
+    ) -> list[tuple[Pet, Task]]:
+        """Return (pet, task) pairs filtered by pet name and/or completion status.
+
+        Parameters
+        ----------
+        pet_name:
+            When given, only tasks belonging to that pet are returned.
+        completed:
+            When True, return only completed tasks.
+            When False, return only pending tasks.
+            When None (default), return all tasks regardless of status.
+        """
+        pairs = self.owner.get_all_tasks()
+        if pet_name is not None:
+            pairs = [(p, t) for p, t in pairs if p.name == pet_name]
+        if completed is not None:
+            pairs = [(p, t) for p, t in pairs if t.completed == completed]
+        return pairs
+
+    # ------------------------------------------------------------------
+    # Conflict detection
+    # ------------------------------------------------------------------
+
+    def check_conflicts(self, pet: Pet | None = None) -> list[str]:
+        """Detect tasks assigned the same HH:MM start time.
+
+        Returns a list of human-readable warning strings — one per
+        conflicting time slot.  Returns an empty list when no conflicts exist.
 
         Parameters
         ----------
         pet:
-            If provided, schedule only that pet's tasks.
-            If None, schedule tasks across all of the owner's pets.
-
-        Returns
-        -------
-        list[ScheduledItem]
-            Time-ordered list of scheduled items that fit within
-            ``owner.available_minutes``.
+            When given, only checks that pet's tasks.
+            When None, checks tasks across all of the owner's pets.
         """
-        # Gather (pet, task) pairs
+        if pet is not None:
+            pairs: list[tuple[Pet, Task]] = [(pet, t) for t in pet.get_tasks()]
+        else:
+            pairs = self.owner.get_all_tasks()
+
+        # Only tasks that have an explicit time can conflict
+        timed_pairs = [(p, t) for p, t in pairs if t.time]
+
+        # Group by time slot
+        time_map: dict[str, list[tuple[Pet, Task]]] = defaultdict(list)
+        for p, t in timed_pairs:
+            time_map[t.time].append((p, t))
+
+        warnings: list[str] = []
+        for time_str, group in sorted(time_map.items()):
+            if len(group) > 1:
+                names = ", ".join(f"{p.name}: {t.title}" for p, t in group)
+                warnings.append(f"Conflict at {time_str} — {names}")
+        return warnings
+
+    # ------------------------------------------------------------------
+    # Schedule generation
+    # ------------------------------------------------------------------
+
+    def generate_schedule(self, pet: Pet | None = None) -> list[ScheduledItem]:
+        """Build a daily schedule for one pet or all pets.
+
+        Tasks are sorted by priority then owner preferences, and greedily
+        assigned back-to-back time slots from 08:00 until the budget runs out.
+        """
         if pet is not None:
             pairs: list[tuple[Pet, Task]] = [
                 (pet, t) for t in pet.pending_tasks()
@@ -217,7 +307,6 @@ class Scheduler:
                 for t in p.pending_tasks()
             ]
 
-        # Sort by priority, then preference, then title
         def sort_key(pair: tuple[Pet, Task]) -> tuple[int, int, str]:
             _, t = pair
             priority_rank = PRIORITY_ORDER.get(t.priority, 1)
@@ -231,8 +320,7 @@ class Scheduler:
 
         for p, task in sorted_pairs:
             if elapsed + task.duration_minutes > self.owner.available_minutes:
-                continue  # not enough time remaining today
-
+                continue
             reason = self._build_reason(task)
             schedule.append(
                 ScheduledItem(pet=p, task=task, start_minute=elapsed, reason=reason)
@@ -242,12 +330,7 @@ class Scheduler:
         return schedule
 
     def explain_plan(self, schedule: list[ScheduledItem]) -> str:
-        """
-        Return a formatted, human-readable explanation of a generated schedule.
-
-        Shows wall-clock start times (starting at 08:00), priority badges,
-        and the reason each task was included.
-        """
+        """Return a formatted, human-readable summary of a generated schedule."""
         if not schedule:
             return (
                 f"No tasks could be scheduled within "
@@ -255,9 +338,7 @@ class Scheduler:
                 "Try shortening task durations or increasing available time."
             )
 
-        lines: list[str] = [
-            f"╔══ Daily Care Plan — {self.owner.name} ══",
-        ]
+        lines: list[str] = [f"╔══ Daily Care Plan — {self.owner.name} ══"]
 
         for item in schedule:
             abs_min = DAY_START_MINUTE + item.start_minute

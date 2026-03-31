@@ -51,6 +51,8 @@ The greedy "fill in priority order" approach is simple and predictable, but it c
 
 That tradeoff is reasonable here because the daily time budgets are loose (the scenario targets ~1–2 hours), and task durations are short (5–30 min). An exact solver would add complexity with negligible real-world benefit for a typical pet owner.
 
+For conflict detection, the scheduler only flags tasks that share the exact same `HH:MM` string — it does not check whether a task's *duration* causes it to overlap with the next one. For example, a 30-minute walk starting at 08:00 and a feeding starting at 08:15 would not be flagged, even though they overlap. A duration-aware check would require tracking end times per task, which is a reasonable next step but was intentionally left out to keep the logic simple and easy to test.
+
 ---
 
 ## 3. AI Collaboration
