@@ -2,15 +2,34 @@
 
 ## 1. System Design
 
+**Three core user actions:**
+1. **Add a pet** — enter the pet's name, species, age, and any special needs.
+2. **Add care tasks** — create tasks (walk, feeding, medication, grooming, enrichment) with a duration and priority level.
+3. **Generate and view today's plan** — produce a prioritized daily schedule that fits within the owner's available time and displays a plain-English explanation of why each task was chosen and when it starts.
+
 **a. Initial design**
 
-- Briefly describe your initial UML design.
-- What classes did you include, and what responsibilities did you assign to each?
+The system is built around four classes:
+
+| Class | Responsibility |
+|---|---|
+| `Task` (dataclass) | Holds a single care item: title, category, duration, priority, and optional notes. Pure data — no logic. |
+| `Pet` (dataclass) | Owns a list of `Task` objects; provides `add_task` / `get_tasks`. Tracks species, age, and special needs. |
+| `Owner` (dataclass) | Holds the owner's name, daily time budget (`available_minutes`), category preferences, and a list of `Pet` objects. |
+| `Scheduler` | Takes an `Owner` and a `Pet`, sorts tasks by priority and owner preferences, greedily fills the time budget, and produces a list of `ScheduledItem` objects plus a human-readable explanation. |
+
+A `ScheduledItem` helper dataclass ties a `Task` to a `start_minute` offset and a short `reason` string, keeping presentation logic out of `Task`.
+
+Relationships:
+- `Owner` **1 → many** `Pet` (an owner can have multiple pets)
+- `Pet` **1 → many** `Task` (each pet carries its own task list)
+- `Scheduler` **uses** `Owner` and `Pet`; **produces** `ScheduledItem` objects
 
 **b. Design changes**
 
-- Did your design change during implementation?
-- If yes, describe at least one change and why you made it.
+One notable design decision: tasks live on `Pet` (not on `Owner` or `Scheduler`). An early alternative was to have `Owner` own all tasks and tag each with a pet reference, but that would make it harder to swap pets in and out of the scheduler independently. Keeping tasks pet-scoped is cleaner for a multi-pet household.
+
+I also added `ScheduledItem` as a separate dataclass rather than returning raw tuples from `generate_schedule`. Tuples are fragile once you add a third field (the `reason`); a named dataclass keeps the API stable and self-documenting.
 
 ---
 
