@@ -1,2 +1,3 @@
 streamlit>=1.30
 pytest>=7.0
+matplotlib>=3.7      # used by _generate_uml.py to produce uml_final.png

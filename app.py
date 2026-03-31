@@ -235,11 +235,9 @@ else:
 st.divider()
 st.header("4️⃣ Generate Schedule")
 
-col_scope, col_gap = st.columns([2, 1])
-with col_scope:
-    schedule_scope = st.radio(
-        "Schedule for", ["All pets", *pet_names], horizontal=True
-    )
+schedule_scope = st.radio(
+    "Schedule for", ["All pets", *pet_names], horizontal=True
+)
 
 if st.button("🗓️ Generate schedule", type="primary", use_container_width=True):
     scheduler = Scheduler(owner)

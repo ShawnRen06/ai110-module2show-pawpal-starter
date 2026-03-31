@@ -13,10 +13,10 @@ The system is built around four classes:
 
 | Class | Responsibility |
 |---|---|
-| `Task` (dataclass) | Holds a single care item: title, category, duration, priority, and optional notes. Pure data — no logic. |
-| `Pet` (dataclass) | Owns a list of `Task` objects; provides `add_task` / `get_tasks`. Tracks species, age, and special needs. |
-| `Owner` (dataclass) | Holds the owner's name, daily time budget (`available_minutes`), category preferences, and a list of `Pet` objects. |
-| `Scheduler` | Takes an `Owner` and a `Pet`, sorts tasks by priority and owner preferences, greedily fills the time budget, and produces a list of `ScheduledItem` objects plus a human-readable explanation. |
+| `Task` (dataclass) | Holds a single care item: title, category, duration, priority, preferred time (`HH:MM`), recurrence frequency (`once`/`daily`/`weekly`), `due_date`, and completion state. `mark_complete()` handles recurrence; `reset()` clears completion. |
+| `Pet` (dataclass) | Owns a list of `Task` objects; provides `add_task`, `get_tasks`, and `pending_tasks` (filters out completed). Tracks species, age, and special needs. |
+| `Owner` (dataclass) | Holds the owner's name, daily time budget (`available_minutes`), category preferences, and a list of `Pet` objects. `get_all_tasks()` aggregates all `(Pet, Task)` pairs across every pet. |
+| `Scheduler` | Takes an `Owner`; generates a priority-sorted daily schedule (`generate_schedule`), sorts tasks by time (`sort_by_time`), filters by pet/status (`filter_tasks`), detects time-slot collisions (`check_conflicts`), and formats a human-readable plan (`explain_plan`). |
 
 A `ScheduledItem` helper dataclass ties a `Task` to a `start_minute` offset and a short `reason` string, keeping presentation logic out of `Task`.
 
@@ -65,6 +65,8 @@ AI was used at every phase, but for different purposes:
 - **Phase 2 (Implementation):** Used AI to scaffold method bodies once the class structure was decided. The most useful prompt pattern was "given this method signature and these rules, implement the body" — short, constrained, and verifiable.
 - **Phase 4 (Algorithms):** Asked AI to suggest a lightweight conflict-detection strategy. It proposed grouping tasks by time with `defaultdict`, which was exactly the right tool. It also showed how to use a lambda key with `sorted()` for HH:MM string comparison.
 - **Phase 5 (Testing):** Used AI to generate test stubs from method signatures. The prompt "write pytest tests for `check_conflicts` covering: no conflict, exact-time match, untimed tasks, cross-pet" produced test skeletons that only needed minor adjustment to match the actual return types.
+
+Using separate chat sessions for each phase kept context clean — the design session focused on UML and class relationships without being distracted by implementation details, the algorithm session focused on sorting/filtering without re-explaining the whole system, and the testing session focused purely on edge cases. Without that separation, context drift caused AI suggestions to mix concerns (e.g., adding UI logic inside `Scheduler` methods).
 
 The most effective prompt pattern throughout: **provide the method signature + the contract it must satisfy**, then ask for an implementation. Vague "write me a scheduler" prompts produced over-engineered code that needed heavy editing.
 
